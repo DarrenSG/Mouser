@@ -275,6 +275,16 @@ class MouseHook(BaseMouseHook):
             if not self._should_intercept_events():
                 return cg_event
 
+            # Normal movement arrives through Quartz, not the HID++ gesture
+            # endpoint. It is the wake signal even when Bolt never disconnects.
+            # Only hardware-originated events count; injected scroll/clicks
+            # must not cause background device traffic. The listener schedules
+            # the actual checks, so this callback never waits on USB.
+            if self._hid_gesture is not None and Quartz.CGEventGetIntegerValueField(
+                cg_event, Quartz.kCGEventSourceUnixProcessID
+            ) == 0:
+                self._hid_gesture.notify_pointer_activity()
+
             mouse_event = None
             should_block = False
 

@@ -1101,6 +1101,12 @@ class HidGestureListener:
         self._pending_dpi = None        # set by set_dpi(), applied in loop
         self._dpi_result  = None        # True/False after apply
         self._dpi_event   = threading.Event()
+        # Keep user intent separate from the one-shot DPI command mailbox.
+        # A Bolt receiver can stay open while its mouse sleeps and resets DPI.
+        self._desired_dpi = None
+        self._dpi_last_activity_at = None
+        self._dpi_wake_due = None
+        self._dpi_wake_attempt = 0
         self._smart_shift_idx = None      # feature index of SMART_SHIFT / SMART_SHIFT_ENHANCED
         self._smart_shift_enhanced = False  # True → use fn 1/2; False → fn 0/1
         self._wheel_feature_indexes = {}
@@ -1892,10 +1898,75 @@ class HidGestureListener:
 
     # ── DPI control ───────────────────────────────────────────────
 
+    DPI_WAKE_IDLE_SECONDS = 30.0
+    DPI_WAKE_CHECK_DELAYS = (0.5, 1.5, 3.0)
+
+    def notify_pointer_activity(self):
+        """Nonblocking signal from the macOS event tap; never sends HID here.
+
+        Arm a bounded series of checks on the first event after pointer idle.
+        Checking again after settling catches firmware that resets DPI a little
+        later than the first movement. Continuous motion does not arm more work.
+        """
+        now = time.monotonic()
+        previous = self._dpi_last_activity_at
+        self._dpi_last_activity_at = now
+        if previous is not None and now - previous < self.DPI_WAKE_IDLE_SECONDS:
+            return
+        if self._desired_dpi is not None and self._dpi_wake_due is None:
+            self._dpi_wake_attempt = 0
+            self._dpi_wake_due = now + self.DPI_WAKE_CHECK_DELAYS[0]
+
+    def _read_sensor_dpi(self):
+        """Read hardware DPI on the HID listener thread, outside the UI mailbox."""
+        resp = self._request(self._dpi_idx, 2, [0x00])
+        if resp and len(resp[4]) >= 3:
+            value = (resp[4][1] << 8) | resp[4][2]
+            return value if value > 0 else None
+        return None
+
+    def _apply_wake_dpi_check(self):
+        """Run only on the listener thread; UI commands keep their own results."""
+        due = self._dpi_wake_due
+        if due is None or time.monotonic() < due or self._pending_dpi is not None:
+            return
+        if self._dev is None or self._dpi_idx is None or not self._connected:
+            self._dpi_wake_due = None
+            return
+
+        actual = self._read_sensor_dpi()
+        # Read intent AFTER the request: the UI may have changed it while the
+        # mouse was replying. A queued manual command always takes precedence.
+        target = self._desired_dpi
+        if target is not None and actual is not None and actual != target:
+            if self._pending_dpi is not None:
+                return
+            resp = self._request(
+                self._dpi_idx, 3, [0x00, (target >> 8) & 0xFF, target & 0xFF]
+            )
+            if resp:
+                print(f"[DPIWake] Restoring DPI {actual} -> {target} after pointer idle")
+                actual = self._read_sensor_dpi()
+            else:
+                actual = None
+
+        self._dpi_wake_attempt += 1
+        if self._dpi_wake_attempt < len(self.DPI_WAKE_CHECK_DELAYS):
+            self._dpi_wake_due = (
+                time.monotonic() + self.DPI_WAKE_CHECK_DELAYS[self._dpi_wake_attempt]
+            )
+        else:
+            self._dpi_wake_due = None
+            if actual is not None and actual == self._desired_dpi:
+                print(f"[DPIWake] Verified {actual} DPI after pointer idle")
+            else:
+                print("[DPIWake] Could not verify saved DPI after 3 wake checks")
+
     def set_dpi(self, dpi_value):
         """Queue a DPI change -- will be applied on the listener thread.
         Can be called from any thread.  Returns True on success."""
         dpi = clamp_dpi(dpi_value, self._connected_device_info)
+        self._desired_dpi = dpi
         self._dpi_result = None
         self._dpi_event.clear()
         self._pending_dpi = dpi
@@ -2688,6 +2759,8 @@ class HidGestureListener:
 
     def _drain_pending_requests(self):
         """Abort all pending HID++ requests, unblocking waiting threads."""
+        self._dpi_wake_due = None
+        self._dpi_last_activity_at = None
         self._pending_battery = None
         self._battery_event.set()
         self._pending_dpi = None
@@ -3400,6 +3473,7 @@ class HidGestureListener:
                         self._apply_pending_haptic()
                     if self._pending_force_sensing is not None:
                         self._apply_pending_force_sensing()
+                    self._apply_wake_dpi_check()
                     raw = self._rx(1000)
                     if raw:
                         _no_data_count = 0

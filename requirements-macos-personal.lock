@@ -1,0 +1,15 @@
+altgraph==0.17.5
+hidapi==0.15.0
+macholib==1.16.4
+packaging==26.3
+pillow==12.3.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7
+pyobjc-core==12.2.2
+pyobjc-framework-cocoa==12.2.2
+pyobjc-framework-quartz==12.2.2
+pyside6==6.11.2
+pyside6-addons==6.11.2
+pyside6-essentials==6.11.2
+setuptools==84.0.0
+shiboken6==6.11.2
