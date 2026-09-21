@@ -1,7 +1,7 @@
 # Personal macOS build
 
 This branch is maintained for DarrenSG's own use. It starts at upstream
-`v3.7.3` and identifies itself as `3.7.3+dpiwake.2`. No upstream PR is planned.
+`v3.7.3` and identifies itself as `3.7.3+dpiwake.3`. No upstream PR is planned.
 
 ## DPI recovery
 
@@ -30,6 +30,13 @@ window expired during wake, and it required a new 30-second idle gap to rearm.
 That build is superseded. The regression suite now covers quick power cycles,
 late resets during movement, recovery after more than three failed checks,
 failed reads with successful writes, and pointer-only wake after HID timeouts.
+
+The third build also fixes receiver discovery: replies must match the requested
+receiver slot, and discovery allows 1.5 seconds for the first response. A real
+background-thread probe showed the first response arriving after about 900 ms,
+exceeding the upstream 400 ms limit; the late reply could previously be accepted
+for the next slot. Sensor reads also reject replies from other paired devices.
+The combined recovery, HID, and mouse-hook suites pass (134 tests).
 
 ## Build and verify
 

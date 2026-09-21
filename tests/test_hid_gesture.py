@@ -450,6 +450,37 @@ class HidDiscoveryDiagnosticsTests(unittest.TestCase):
 
 
 class HidRequestTransportFailureTests(unittest.TestCase):
+    def test_discovery_ignores_late_reply_from_previous_receiver_slot(self):
+        listener = hid_gesture.HidGestureListener()
+        listener._dev_idx = 1
+        late = [0x11, 2, 0, hid_gesture.MY_SW, 13, 0, 0]
+        current = [0x11, 1, 0, hid_gesture.MY_SW, 0, 0, 0]
+        with patch.object(listener, "_tx"), patch.object(
+            listener, "_rx", side_effect=[late, current]
+        ):
+            self.assertIsNone(listener._find_feature(0x1B04))
+
+    def test_sensor_read_ignores_other_mouse_on_same_receiver(self):
+        listener = hid_gesture.HidGestureListener()
+        listener._dev_idx = 2
+        listener._dpi_idx = 20
+        other = [0x11, 1, 20, 0x20 | hid_gesture.MY_SW, 0, 15, 160]
+        current = [0x11, 2, 20, 0x20 | hid_gesture.MY_SW, 0, 3, 232]
+        with patch.object(listener, "_tx"), patch.object(
+            listener, "_rx", side_effect=[other, current]
+        ):
+            self.assertEqual(listener._read_sensor_dpi(), 1000)
+
+    def test_other_receiver_slot_error_does_not_fail_current_request(self):
+        listener = hid_gesture.HidGestureListener()
+        listener._dev_idx = 2
+        other_error = [0x11, 1, 0xFF, 0, 0, 9]
+        current = [0x11, 2, 0, hid_gesture.MY_SW, 13, 0, 0]
+        with patch.object(listener, "_tx"), patch.object(
+            listener, "_rx", side_effect=[other_error, current]
+        ):
+            self.assertEqual(listener._find_feature(0x1B04), 13)
+
     def test_request_raises_ioerror_on_tx_failure_during_active_session(self):
         listener = hid_gesture.HidGestureListener()
         listener._connected = True

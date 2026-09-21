@@ -1485,7 +1485,12 @@ class HidGestureListener:
             msg = _parse(raw)
             if msg is None:
                 continue
-            _, r_feat, r_func, r_sw, r_params = msg
+            r_dev, r_feat, r_func, r_sw, r_params = msg
+            # A receiver multiplexes several paired devices. A delayed reply
+            # from the previous discovery slot must not identify this slot or
+            # satisfy a sensor read/write for a different mouse.
+            if r_dev != self._dev_idx:
+                continue
 
             # HID++ error (feature-index 0xFF)
             if r_feat == 0xFF:
@@ -1518,9 +1523,8 @@ class HidGestureListener:
         `timeout_ms` controls how long to wait for the IRoot response. The
         default of 2000 ms is the safe value for active sessions; during
         the REPROG_V4 discovery probe in `_try_connect` we use a much
-        tighter timeout (≈400 ms) because a live HID++ device responds in
-        <50 ms and waiting longer just stalls us across non-matching
-        receiver slots and candidate interfaces.
+        shorter timeout (1.5 s). The first IOKit reply on a background thread
+        can take about a second even when later replies arrive within 50 ms.
         """
         hi = (feature_id >> 8) & 0xFF
         lo = feature_id & 0xFF
@@ -3136,7 +3140,7 @@ class HidGestureListener:
             hidpp_name = None
             for idx in idx_order:
                 self._dev_idx = idx
-                fi = self._find_feature(FEAT_REPROG_V4, timeout_ms=400)
+                fi = self._find_feature(FEAT_REPROG_V4, timeout_ms=1500)
                 if fi is not None:
                     reprog_found = True
                     self._feat_idx = fi
