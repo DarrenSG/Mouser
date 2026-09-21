@@ -8,7 +8,7 @@ from core import hid_gesture
 
 
 def dpi_reply(value):
-    return (0x11, 2, 0x14, 0x20, [0, value >> 8, value & 0xFF])
+    return (2, 0x14, 2, hid_gesture.MY_SW, [0, value >> 8, value & 0xFF])
 
 
 class DpiWakeTests(unittest.TestCase):
@@ -81,7 +81,8 @@ class DpiWakeTests(unittest.TestCase):
         self.assertEqual([c.args[1] for c in self.listener._request.call_args_list], [2, 3, 2])
         self.assertFalse(self.listener._dpi_recovery_pending)
         for call in self.listener._request.call_args_list:
-            self.assertEqual(call.kwargs['timeout_ms'], 500)
+            self.assertEqual(call.kwargs['timeout_ms'], 1500)
+            self.assertTrue(call.kwargs['exact_function'])
 
     def test_failed_checks_can_retry_after_three_attempts_without_idle_gap(self):
         request = self.listener._request.side_effect

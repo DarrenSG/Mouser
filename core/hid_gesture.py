@@ -1456,7 +1456,7 @@ class HidGestureListener:
         d = dev.read(64, timeout_ms)
         return list(d) if d else None
 
-    def _request(self, feat, func, params, timeout_ms=2000):
+    def _request(self, feat, func, params, timeout_ms=2000, exact_function=False):
         """Send a long HID++ request, wait for matching response."""
         req_params = list(params)
         try:
@@ -1502,7 +1502,7 @@ class HidGestureListener:
                       f"resp=[{_hex_bytes(r_params)}]")
                 return None
 
-            expected_funcs = {func, (func + 1) & 0x0F}
+            expected_funcs = {func} if exact_function else {func, (func + 1) & 0x0F}
             if r_feat == feat and r_sw == MY_SW and r_func in expected_funcs:
                 self._consecutive_request_timeouts = 0
                 return msg
@@ -1906,7 +1906,7 @@ class HidGestureListener:
 
     DPI_ACTIVITY_CHECK_INTERVAL = 2.0
     DPI_ACTIVITY_MAX_AGE = 3.0
-    DPI_ACTIVITY_REQUEST_TIMEOUT_MS = 500
+    DPI_ACTIVITY_REQUEST_TIMEOUT_MS = 1500
 
     def notify_pointer_activity(self):
         """Nonblocking signal from the macOS event tap; never sends HID here.
@@ -1927,7 +1927,8 @@ class HidGestureListener:
     def _read_sensor_dpi(self):
         """Read hardware DPI on the HID listener thread, outside the UI mailbox."""
         resp = self._request(
-            self._dpi_idx, 2, [0x00], timeout_ms=self.DPI_ACTIVITY_REQUEST_TIMEOUT_MS
+            self._dpi_idx, 2, [0x00], timeout_ms=self.DPI_ACTIVITY_REQUEST_TIMEOUT_MS,
+            exact_function=True,
         )
         if resp and len(resp[4]) >= 3:
             value = (resp[4][1] << 8) | resp[4][2]
@@ -1962,6 +1963,7 @@ class HidGestureListener:
                 resp = self._request(
                     self._dpi_idx, 3, [0x00, (target >> 8) & 0xFF, target & 0xFF],
                     timeout_ms=self.DPI_ACTIVITY_REQUEST_TIMEOUT_MS,
+                    exact_function=True,
                 )
                 if resp:
                     previous = actual if actual is not None else "unreadable"

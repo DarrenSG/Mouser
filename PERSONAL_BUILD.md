@@ -1,7 +1,7 @@
 # Personal macOS build
 
 This branch is maintained for DarrenSG's own use. It starts at upstream
-`v3.7.3` and identifies itself as `3.7.3+dpiwake.3`. No upstream PR is planned.
+`v3.7.3` and identifies itself as `3.7.3+dpiwake.4`. No upstream PR is planned.
 
 ## DPI recovery
 
@@ -12,7 +12,7 @@ The macOS event tap signals physical pointer activity to the HID listener.
 The listener checks DPI at most once per two seconds of activity and restores
 saved intent on mismatch. A failed read does not prevent a restore write, and
 further movement retries after failures without a three-attempt cutoff.
-Individual recovery requests use a 500 ms timeout. Manual DPI requests retain
+Individual recovery requests allow 1.5 seconds for receiver response latency. Manual DPI requests retain
 priority and their response mailbox is separate.
 
 No minimum idle period is required. Pending activity expires after three
@@ -36,7 +36,13 @@ receiver slot, and discovery allows 1.5 seconds for the first response. A real
 background-thread probe showed the first response arriving after about 900 ms,
 exceeding the upstream 400 ms limit; the late reply could previously be accepted
 for the next slot. Sensor reads also reject replies from other paired devices.
-The combined recovery, HID, and mouse-hook suites pass (134 tests).
+The combined recovery, HID, and mouse-hook suites pass (135 tests).
+
+The fourth build uses the same 1.5-second allowance for sensor requests and
+strictly matches DPI response function IDs. In particular, a delayed write
+acknowledgement cannot satisfy a sensor read-back. A regression test supplies
+an acknowledgement containing 4000 followed by a real reading of 1000 and
+verifies that the actual reading wins.
 
 ## Build and verify
 

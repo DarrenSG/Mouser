@@ -450,6 +450,17 @@ class HidDiscoveryDiagnosticsTests(unittest.TestCase):
 
 
 class HidRequestTransportFailureTests(unittest.TestCase):
+    def test_dpi_read_does_not_mistake_delayed_write_ack_for_sensor_value(self):
+        listener = hid_gesture.HidGestureListener()
+        listener._dev_idx = 2
+        listener._dpi_idx = 20
+        write_ack = [0x11, 2, 20, 0x30 | hid_gesture.MY_SW, 0, 15, 160]
+        sensor_reply = [0x11, 2, 20, 0x20 | hid_gesture.MY_SW, 0, 3, 232]
+        with patch.object(listener, "_tx"), patch.object(
+            listener, "_rx", side_effect=[write_ack, sensor_reply]
+        ):
+            self.assertEqual(listener._read_sensor_dpi(), 1000)
+
     def test_discovery_ignores_late_reply_from_previous_receiver_slot(self):
         listener = hid_gesture.HidGestureListener()
         listener._dev_idx = 1
