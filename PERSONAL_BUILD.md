@@ -1,28 +1,35 @@
 # Personal macOS build
 
 This branch is maintained for DarrenSG's own use. It starts at upstream
-`v3.7.3` and identifies itself as `3.7.3+dpiwake.1`. No upstream PR is planned.
+`v3.7.3` and identifies itself as `3.7.3+dpiwake.2`. No upstream PR is planned.
 
 ## DPI recovery
 
 A Logitech mouse can sleep and reset its sensor DPI while its USB receiver
 stays connected. The existing reconnect callback never runs in that case.
 
-The macOS event tap now signals physical pointer activity to the HID listener.
-After a gap of at least 30 seconds, the listener checks sensor DPI approximately
-0.5, 2, and 5 seconds later (subject to its existing read timeout). A mismatch
-is restored to the latest requested DPI and read back. Later checks cover a
-delayed firmware reset. Normal movement does not keep scheduling checks, and
-there is no periodic HID polling while idle.
+The macOS event tap signals physical pointer activity to the HID listener.
+The listener checks DPI at most once per two seconds of activity and restores
+saved intent on mismatch. A failed read does not prevent a restore write, and
+further movement retries after failures without a three-attempt cutoff.
+Individual recovery requests use a 500 ms timeout. Manual DPI requests retain
+priority and their response mailbox is separate.
 
-All USB commands execute on the existing HID listener thread. The event tap
-does not block on device I/O, recovery does not reuse the UI command mailbox,
-and queued manual changes take precedence. Disconnect cancels outstanding
-checks but preserves the desired DPI. No SmartShift rewrite is needed.
+No minimum idle period is required. Pending activity expires after three
+seconds, so there is no recurring idle polling. Pointer activity also wakes the
+listener's software sleep state even if Bolt supplies no HID++ wake report.
+All USB commands execute on the existing listener thread; the event tap never
+waits for USB. Normal checks do not rewrite SmartShift.
 
 Quartz reports pointer events from all pointing devices, so a trackpad can
-also trigger a bounded check of the connected Logitech mouse. Software-injected
-events do not trigger recovery.
+also trigger a check of the connected Logitech mouse. Software-injected events
+do not trigger recovery. Unchanged successful checks are quiet in the log.
+
+The first build (`dpiwake.1`) failed a real power-cycle test: its finite retry
+window expired during wake, and it required a new 30-second idle gap to rearm.
+That build is superseded. The regression suite now covers quick power cycles,
+late resets during movement, recovery after more than three failed checks,
+failed reads with successful writes, and pointer-only wake after HID timeouts.
 
 ## Build and verify
 
@@ -41,8 +48,9 @@ existing settings and login item. macOS may require Accessibility access to
 be granted again after rebuilding. Disable upstream update checks in settings
 to avoid update prompts for builds that do not contain this patch.
 
-To validate on hardware, leave the mouse untouched for at least 30 seconds,
-then move it. The application log should contain `[DPIWake] Verified 4000 DPI`
-(or your chosen DPI), with a `Restoring DPI` entry if the sensor had reset.
-Also test actual mouse sleep, power cycling, receiver reconnect, and remapped
-buttons. Logs live at `~/Library/Logs/Mouser/mouser.log`.
+To validate on hardware, power the mouse off and back on using the same
+sequence that reproduced the bug, then move it without changing General
+Settings. Check pointer speed and the `[DPIWake]` restoration and sensor
+read-back messages in `~/Library/Logs/Mouser/mouser.log`. A synthetic sensor
+reset or a short idle check alone does not prove a real power-cycle fix.
+Long sleep/wake is a separate validation case.
